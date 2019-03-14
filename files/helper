@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Generate wireguard keys for interface $1
+# Update interface's config file private key, or check that it's valid
+# $1 - iface name. Default: wg0
+# $2 - action. update or validate, genkeys. Default: update
+# With update action - check that config file contains valid private key
+#    and if not, copy key from keyfile to conf file.
+# With validate action - check that config file contains valid private key.
+#    return 0 exit code on success
+# With genkeys action - generate wireuard private/public keys fro interface.
+#    Keys are in keys dir.
+PATH='/bin:/sbin:/usr/bin:/usr/sbin'
+
+IF_NAME=${1:-'wg0'}
+ACTION=${2:-'update'}
+CONFIG_DIR=$(dirname `readlink -f $0`)
+KEYS_DIR='keys'
+PRIV_KEY="${CONFIG_DIR}/${KEYS_DIR}/${IF_NAME}.key"
+PUB_KEY="${CONFIG_DIR}/${KEYS_DIR}/${IF_NAME}.pub"
+CONF_FILE="${CONFIG_DIR}/${IF_NAME}.conf"
+TEMPLATE_FILE="${CONFIG_DIR}/${IF_NAME}.template"
+
+_gen_wg_keys() {
+  echo "generating keys for ${IF_NAME}"
+  test -d "${CONFIG_DIR}/${KEYS_DIR}" || mkdir "${CONFIG_DIR}/${KEYS_DIR}"
+  umask 0377
+  wg genkey > $PRIV_KEY
+  umask 0022
+  cat $PRIV_KEY | wg pubkey > $PUB_KEY
+}
+
+_update(){
+  echo "Updating ${IF_NAME} config with correct private key"
+  priv_key=`cat $PRIV_KEY`
+  sed -i "s/^PrivateKey.*/PrivateKey = ${priv_key}/" $CONF_FILE
+}
+
+_validate(){
+  local priv_key
+  local conf_string
+  local rc
+  test -f $PRIV_KEY || return 1
+  priv_key=`cat $PRIV_KEY`
+  conf_string="PrivateKey = ${priv_key}"
+  grep -q "${conf_string}" $CONF_FILE
+  rc=$?
+  return $rc
+}
+
+test -f $PRIV_KEY || _gen_wg_keys
+
+case $ACTION in
+  update)
+      cp $TEMPLATE_FILE $CONF_FILE
+      _update
+    ;;
+  validate)
+    test -f $CONF_FILE || exit 1
+    _validate
+    rc=$?
+    exit $rc
+    ;;
+  genkeys)
+    _gen_wg_keys
+    ;;
+  *)
+    echo 'Action must be update or validate'
+    exit 1
+    ;;
+esac
