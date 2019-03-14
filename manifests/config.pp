@@ -13,4 +13,11 @@ class wireguard::config (
     owner  => 'root',
     group  => 'root',
   }
+  ->file {'wg_conf_helper':
+    ensure => present,
+    path   => "${config_dir}/helper",
+    source => 'puppet:///modules/wireguard/helper',
+    mode   => '0744',
+  }
+
 }
